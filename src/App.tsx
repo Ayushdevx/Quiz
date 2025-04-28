@@ -8,6 +8,7 @@ import QuizSettings from './components/QuizSettings';
 import QuizScreen from './components/QuizScreen';
 import QuizResults from './components/QuizResults';
 import PerformanceAnalytics from './components/PerformanceAnalytics';
+import LeaderboardScreen from './components/LeaderboardScreen';
 import ThemeSwitcher from './components/ui/ThemeSwitcher';
 
 function App() {
@@ -80,6 +81,8 @@ function App() {
         return <QuizResults />;
       case 'analytics':
         return <PerformanceAnalytics />;
+      case 'leaderboard':
+        return <LeaderboardScreen />;
       default:
         return <WelcomeScreen />;
     }

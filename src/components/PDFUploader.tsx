@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Upload, AlertCircle, ArrowLeft, File, Loader2,
-  Smartphone, Wifi, Lightning, FileBadge2
+  Smartphone, Wifi, Zap, FileBadge2
 } from 'lucide-react';
 import Button from './ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
@@ -296,7 +296,7 @@ const PDFUploader: React.FC = () => {
                           className="rounded text-primary-500 focus:ring-primary-500"
                         />
                         <div className="flex items-center gap-1">
-                          <Lightning className="w-3.5 h-3.5 text-primary-500" />
+                          <Zap className="w-3.5 h-3.5 text-primary-500" />
                           <span className="text-gray-700 dark:text-gray-300">Gemini 2.0 Flash</span>
                         </div>
                       </label>

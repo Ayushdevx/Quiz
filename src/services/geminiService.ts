@@ -1,19 +1,30 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Question, QuizSettings, QuestionType, PDFContent } from '../types';
-import { generateRandomId } from '../lib/utils';
+import { generateRandomId, detectDeviceType } from '../lib/utils';
 
 const API_KEY = 'AIzaSyAgFlI9-tx7gm9wapsC8pLAV3RJLY0TBWU';
 
 // Initialize the Gemini API client
 const genAI = new GoogleGenerativeAI(API_KEY);
-// Using Gemini 2.0 Flash model for faster performance on mobile devices
-const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-// Create a streaming version of the model for progressive loading on mobile
+// Using Gemini 2.0 Flash model for faster response times
+const model = genAI.getGenerativeModel({ 
+  model: 'gemini-2.0-flash',
+  generationConfig: {
+    maxOutputTokens: 2048,
+    temperature: 0.7,
+    topP: 0.8,
+  }
+});
+
+// Create a streaming version for progressive loading on mobile
 const streamingModel = genAI.getGenerativeModel({ 
   model: 'gemini-2.0-flash',
   generationConfig: {
     maxOutputTokens: 2048,
+    temperature: 0.7,
+    topP: 0.8,
+    responseStreamingEnabled: true,
   }
 });
 
@@ -32,6 +43,7 @@ export async function generateQuestionsStreamingFromPdf(
     
     let accumulatedText = '';
     const allQuestions: Question[] = [];
+    const processedIds = new Set<string>();
 
     // Process the stream in chunks - better for mobile connections
     for await (const chunk of result.stream) {
@@ -41,8 +53,21 @@ export async function generateQuestionsStreamingFromPdf(
       try {
         // Try to parse partial results for progressive loading
         const partialQuestions = parseGeneratedQuestions(accumulatedText, settings);
-        if (partialQuestions.length > 0 && onProgress) {
-          onProgress(partialQuestions);
+        
+        // Only send new questions to the callback to avoid duplicates
+        const newQuestions = partialQuestions.filter(q => !processedIds.has(q.id));
+        
+        if (newQuestions.length > 0 && onProgress) {
+          // Optimize questions for mobile if needed
+          const deviceType = detectDeviceType();
+          const optimizedQuestions = (deviceType === 'mobile' || deviceType === 'tablet') 
+            ? optimizeQuestionsForMobile(newQuestions)
+            : newQuestions;
+            
+          onProgress(optimizedQuestions);
+          
+          // Mark these questions as processed
+          newQuestions.forEach(q => processedIds.add(q.id));
         }
       } catch (e) {
         // Ignore parsing errors for partial content
@@ -50,9 +75,15 @@ export async function generateQuestionsStreamingFromPdf(
     }
     
     // Final parsing of complete response
-    return parseGeneratedQuestions(accumulatedText, settings);
+    const finalQuestions = parseGeneratedQuestions(accumulatedText, settings);
+    
+    // Optimize for mobile if needed
+    const deviceType = detectDeviceType();
+    return (deviceType === 'mobile' || deviceType === 'tablet')
+      ? optimizeQuestionsForMobile(finalQuestions)
+      : finalQuestions;
   } catch (error) {
-    console.error('Error generating questions:', error);
+    console.error('Error generating questions with streaming:', error);
     throw error;
   }
 }
@@ -71,7 +102,13 @@ export async function generateQuestionsFromPdf(
     const text = response.text();
     
     // Parse the generated questions
-    return parseGeneratedQuestions(text, settings);
+    const questions = parseGeneratedQuestions(text, settings);
+    
+    // Optimize for mobile if needed
+    const deviceType = detectDeviceType();
+    return (deviceType === 'mobile' || deviceType === 'tablet')
+      ? optimizeQuestionsForMobile(questions) 
+      : questions;
   } catch (error) {
     console.error('Error generating questions:', error);
     throw error;
@@ -92,7 +129,7 @@ export async function generateQuestionsStreamingFromTopic(
     const result = await streamingModel.generateContentStream(prompt);
     
     let accumulatedText = '';
-    const allQuestions: Question[] = [];
+    const processedIds = new Set<string>();
 
     for await (const chunk of result.stream) {
       const chunkText = chunk.text();
@@ -100,17 +137,37 @@ export async function generateQuestionsStreamingFromTopic(
       
       try {
         const partialQuestions = parseGeneratedQuestions(accumulatedText, settings);
-        if (partialQuestions.length > 0 && onProgress) {
-          onProgress(partialQuestions);
+        
+        // Only send new questions to the callback
+        const newQuestions = partialQuestions.filter(q => !processedIds.has(q.id));
+        
+        if (newQuestions.length > 0 && onProgress) {
+          // Optimize questions for mobile if needed
+          const deviceType = detectDeviceType();
+          const optimizedQuestions = (deviceType === 'mobile' || deviceType === 'tablet') 
+            ? optimizeQuestionsForMobile(newQuestions)
+            : newQuestions;
+            
+          onProgress(optimizedQuestions);
+          
+          // Mark these questions as processed
+          newQuestions.forEach(q => processedIds.add(q.id));
         }
       } catch (e) {
         // Ignore parsing errors for partial content
       }
     }
     
-    return parseGeneratedQuestions(accumulatedText, settings);
+    // Final parsing of complete response
+    const finalQuestions = parseGeneratedQuestions(accumulatedText, settings);
+    
+    // Optimize for mobile if needed
+    const deviceType = detectDeviceType();
+    return (deviceType === 'mobile' || deviceType === 'tablet')
+      ? optimizeQuestionsForMobile(finalQuestions)
+      : finalQuestions;
   } catch (error) {
-    console.error('Error generating topic questions:', error);
+    console.error('Error generating topic questions with streaming:', error);
     throw error;
   }
 }
@@ -130,7 +187,13 @@ export async function generateQuestionsFromTopic(
     const text = response.text();
     
     // Parse the generated questions
-    return parseGeneratedQuestions(text, settings);
+    const questions = parseGeneratedQuestions(text, settings);
+    
+    // Optimize for mobile if needed
+    const deviceType = detectDeviceType();
+    return (deviceType === 'mobile' || deviceType === 'tablet')
+      ? optimizeQuestionsForMobile(questions)
+      : questions;
   } catch (error) {
     console.error('Error generating topic questions:', error);
     throw error;
@@ -144,10 +207,14 @@ function createQuestionGenerationPrompt(
 ): string {
   // Take a subset of the content to stay within token limits
   // For mobile, we use an even smaller content size to optimize speed
-  const maxContentLength = mobileOptimized ? 8000 : 15000;
+  const maxContentLength = mobileOptimized ? 6000 : 12000;
   const truncatedContent = content.slice(0, maxContentLength);
   
+  const deviceType = detectDeviceType();
+  const isMobile = deviceType === 'mobile' || deviceType === 'tablet';
+  
   return `
+    You are an advanced quiz generator using Gemini 2.0 Flash model.
     Generate ${settings.numQuestions} quiz questions based on the following content.
     
     Content:
@@ -157,19 +224,23 @@ function createQuestionGenerationPrompt(
     - Question types: ${settings.questionTypes.join(', ')}
     - Difficulty level: ${settings.difficulty}
     - Topic focus: ${settings.topic || 'General content'}
+    ${settings.showHints ? '- Include hints for each question' : ''}
+    ${isMobile ? '- Optimize for mobile device viewing' : ''}
     
     For each question, provide:
-    1. The question text (keep it concise and clear)
+    1. The question text ${isMobile ? '(keep it under 120 characters)' : '(keep it concise and clear)'}
     2. Question type (${settings.questionTypes.join('/')})
-    3. Options (for multiple-choice, provide 4 distinct options)
+    3. Options (for multiple-choice, provide 4 distinct options ${isMobile ? ', each under 60 characters' : ''})
     4. Correct answer
-    5. A brief explanation (2-3 sentences maximum)
+    5. A brief explanation ${isMobile ? '(1-2 sentences maximum)' : '(2-3 sentences maximum)'}
     6. Difficulty level
+    ${settings.showHints ? '7. A short hint' : ''}
     
     Format the response as a JSON array of question objects. Each object should have: 
-    { "text", "type", "options", "correctAnswer", "explanation", "difficulty" }
+    { "text", "type", "options", "correctAnswer", "explanation", "difficulty"${settings.showHints ? ', "hint"' : ''} }
     
-    Make sure all question text and options are concise and mobile-friendly (under 150 characters).
+    ${isMobile ? 'Response MUST be optimized for mobile viewing with short, concise text.' : ''}
+    ${isMobile ? 'Questions must be extremely concise and easily readable on small screens.' : ''}
   `;
 }
 
@@ -178,26 +249,34 @@ function createTopicQuestionPrompt(
   settings: QuizSettings,
   additionalDetails?: string
 ): string {
+  const deviceType = detectDeviceType();
+  const isMobile = deviceType === 'mobile' || deviceType === 'tablet';
+  
   return `
+    You are an advanced quiz generator using Gemini 2.0 Flash model.
     Generate ${settings.numQuestions} quiz questions about "${topic}".
     ${additionalDetails ? `\nAdditional context: ${additionalDetails}` : ''}
     
     Quiz Settings:
     - Question types: ${settings.questionTypes.join(', ')}
     - Difficulty level: ${settings.difficulty}
+    ${settings.showHints ? '- Include hints for each question' : ''}
+    ${isMobile ? '- Optimize for mobile device viewing' : ''}
     
     For each question, provide:
-    1. The question text (keep it concise and clear, mobile-friendly under 150 characters)
+    1. The question text ${isMobile ? '(keep it under 120 characters)' : '(keep it concise and clear)'}
     2. Question type (${settings.questionTypes.join('/')})
-    3. Options (for multiple-choice, provide 4 distinct options, each under 100 characters)
+    3. Options (for multiple-choice, provide 4 distinct options ${isMobile ? ', each under 60 characters' : ''})
     4. Correct answer
-    5. A brief explanation (2-3 sentences maximum)
+    5. A brief explanation ${isMobile ? '(1-2 sentences maximum)' : '(2-3 sentences maximum)'}
     6. Difficulty level
+    ${settings.showHints ? '7. A short hint' : ''}
     
     Format the response as a JSON array of question objects. Each object should have: 
-    { "text", "type", "options", "correctAnswer", "explanation", "difficulty" }
+    { "text", "type", "options", "correctAnswer", "explanation", "difficulty"${settings.showHints ? ', "hint"' : ''} }
     
-    Optimize all content for mobile viewing with concise text.
+    ${isMobile ? 'Response MUST be optimized for mobile viewing with short, concise text.' : ''}
+    ${isMobile ? 'Questions must be extremely concise and easily readable on small screens.' : ''}
   `;
 }
 
@@ -218,7 +297,8 @@ function parseGeneratedQuestions(text: string, settings: QuizSettings): Question
         correctAnswer: q.correctAnswer,
         explanation: q.explanation,
         difficulty: q.difficulty || settings.difficulty,
-        topic: settings.topic
+        topic: settings.topic,
+        hint: q.hint || null
       }));
     }
     
@@ -252,12 +332,33 @@ export function optimizeQuestionsForMobile(questions: Question[]): Question[] {
   return questions.map(q => ({
     ...q,
     // Ensure question text isn't too long for mobile screens
-    text: q.text.length > 150 ? q.text.substring(0, 147) + '...' : q.text,
+    text: q.text.length > 120 ? q.text.substring(0, 117) + '...' : q.text,
     // Truncate long explanations for mobile
-    explanation: q.explanation.length > 200 ? q.explanation.substring(0, 197) + '...' : q.explanation,
+    explanation: q.explanation.length > 180 ? q.explanation.substring(0, 177) + '...' : q.explanation,
     // Ensure options aren't too long for mobile screens
     options: Array.isArray(q.options) ? 
-      q.options.map(opt => opt.length > 100 ? opt.substring(0, 97) + '...' : opt) : 
-      q.options
+      q.options.map(opt => opt.length > 60 ? opt.substring(0, 57) + '...' : opt) : 
+      q.options,
+    // If there's a hint, ensure it's not too long
+    hint: q.hint && q.hint.length > 100 ? q.hint.substring(0, 97) + '...' : q.hint
   }));
+}
+
+// Utility to check model capabilities (for info purposes)
+export async function checkGeminiModelCapabilities() {
+  try {
+    const modelInfo = await genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }).countTokens("Test message");
+    return {
+      model: 'gemini-2.0-flash',
+      available: true,
+      tokenInfo: modelInfo
+    };
+  } catch (error) {
+    console.error("Error checking model capabilities:", error);
+    return {
+      model: 'gemini-2.0-flash',
+      available: false,
+      error: error.message
+    };
+  }
 }

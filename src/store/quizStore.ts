@@ -15,7 +15,7 @@ import {
   FlashCard,
   StudyNote
 } from '../types';
-import { generateRandomId, calculatePercentage } from '../lib/utils';
+import { generateRandomId, calculatePercentage, getOptimalAnimationLevel } from '../lib/utils';
 
 interface QuizState {
   // Theme and preferences
@@ -59,6 +59,10 @@ interface QuizState {
   achievements: { id: string; name: string; icon: string; unlocked: boolean }[];
   leaderboard: LeaderboardEntry[];
   
+  // Progressive loading state for mobile
+  loadingQuestions: boolean;
+  setLoadingQuestions: (loading: boolean) => void;
+  
   // UI state
   isLoading: boolean;
   screen: 'welcome' | 'topic-selection' | 'pdf-upload' | 'quiz-settings' | 'quiz' | 'results' | 'analytics' | 'profile' | 'leaderboard' | 'study' | 'settings' | 'achievements';
@@ -66,8 +70,9 @@ interface QuizState {
   // Actions
   setSettings: (settings: Partial<QuizSettings>) => void;
   setQuestions: (questions: Question[]) => void;
+  addQuestion: (question: Question) => void;
   startQuiz: () => void;
-  answerQuestion: (answer: string | string[], timeSpent: number) => void;
+  answerQuestion: (answer: string | string[], timeSpent?: number) => void;
   nextQuestion: () => void;
   completeQuiz: () => void;
   setPdfContent: (content: PDFContent | null) => void;
@@ -177,7 +182,7 @@ export const useQuizStore = create<QuizState>()(
     (set, get) => ({
       // Theme and preferences
       theme: 'light' as Theme,
-      animationLevel: 'moderate' as AnimationLevel,
+      animationLevel: getOptimalAnimationLevel(),
       enableSound: true,
       
       setTheme: (theme: Theme) => set({ theme }),
@@ -207,6 +212,10 @@ export const useQuizStore = create<QuizState>()(
         settings: { ...state.settings, studyMode: !state.settings.studyMode }
       })),
       
+      // Progressive loading state for streaming questions
+      loadingQuestions: false,
+      setLoadingQuestions: (loading) => set({ loadingQuestions: loading }),
+      
       pdfContent: null,
       isPdfLoading: false,
       
@@ -235,6 +244,11 @@ export const useQuizStore = create<QuizState>()(
       })),
       
       setQuestions: (questions) => set({ questions }),
+      
+      // Add a single question - used for streaming API responses
+      addQuestion: (question) => set((state) => ({
+        questions: [...state.questions, question]
+      })),
       
       startQuiz: () => {
         const { settings } = get();
@@ -301,8 +315,14 @@ export const useQuizStore = create<QuizState>()(
       },
       
       nextQuestion: () => {
-        const { currentQuestionIndex, questions } = get();
+        const { currentQuestionIndex, questions, loadingQuestions } = get();
         const nextIndex = currentQuestionIndex + 1;
+        
+        // If we're streaming questions and we've reached the end of currently loaded questions
+        if (loadingQuestions && nextIndex >= questions.length) {
+          // Stay on the current index until more questions load
+          return;
+        }
         
         if (nextIndex >= questions.length) {
           get().completeQuiz();
@@ -312,7 +332,12 @@ export const useQuizStore = create<QuizState>()(
       },
       
       completeQuiz: () => {
-        const { currentResult, quizHistory, achievements } = get();
+        const { currentResult, quizHistory, achievements, loadingQuestions } = get();
+        
+        // If we're still loading questions, stop loading
+        if (loadingQuestions) {
+          set({ loadingQuestions: false });
+        }
         
         if (!currentResult) {
           return;

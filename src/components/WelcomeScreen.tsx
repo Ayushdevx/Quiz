@@ -277,7 +277,7 @@ const WelcomeScreen: React.FC = () => {
               <Button
                 variant="outline"
                 className="border-2 shadow-sm"
-                onClick={() => setScreen('analytics')}
+                onClick={() => setScreen('leaderboard')}
                 icon={<Users className="w-4 h-4" />}
               >
                 Leaderboards

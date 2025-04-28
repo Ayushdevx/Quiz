@@ -16,12 +16,11 @@ const QuizScreen: React.FC = () => {
     currentQuestionIndex, 
     answerQuestion, 
     settings, 
-    timeRemaining, 
     completeQuiz,
     animationLevel,
     loadingQuestions,
-    addQuestion,
-    setLoadingQuestions
+    setLoadingQuestions,
+    nextQuestion
   } = useQuizStore();
   
   const [timer, setTimer] = useState<number | null>(null);
@@ -33,8 +32,12 @@ const QuizScreen: React.FC = () => {
   const [orientation, setOrientation] = useState<'portrait'|'landscape'>(
     window.matchMedia("(orientation: portrait)").matches ? 'portrait' : 'landscape'
   );
+  const [hasStreamingActive, setHasStreamingActive] = useState(false);
   
   const progressRef = useRef<HTMLDivElement>(null);
+  
+  // Define currentQuestion
+  const currentQuestion = questions[currentQuestionIndex] || {};
   
   // Detect device type and orientation for responsive layout
   useEffect(() => {
@@ -63,26 +66,26 @@ const QuizScreen: React.FC = () => {
   
   // Set up timer if time limit is specified
   useEffect(() => {
-    if (settings.timeLimit && timeRemaining === null) {
-      // Set initial timer
-      setTimer(settings.timeLimit * questions.length);
-    } else if (timeRemaining !== null) {
-      setTimer(timeRemaining);
+    if (settings.timeLimit) {
+      // Set timer for current question only, not the entire quiz
+      setTimer(settings.timeLimit);
+    } else {
+      setTimer(null);
     }
-  }, [settings, timeRemaining, questions]);
+  }, [settings, currentQuestionIndex]); // Reset timer when question changes
   
   // Handle timer
   useEffect(() => {
     if (timer === null) return;
     
     if (timer <= 0) {
-      // Time's up, end the quiz
-      completeQuiz();
+      // Time's up for this question, move to the next question instead of ending the quiz
+      nextQuestion();
       return;
     }
-
+    
     // Show warning when less than 20% of time remains
-    if (settings.timeLimit && timer <= settings.timeLimit * questions.length * 0.2 && timer % 5 === 0) {
+    if (settings.timeLimit && timer <= settings.timeLimit * 0.2 && timer % 5 === 0) {
       setShowTimerWarning(true);
       setTimeout(() => setShowTimerWarning(false), 1000);
     }
@@ -92,15 +95,21 @@ const QuizScreen: React.FC = () => {
     }, 1000);
     
     return () => clearInterval(interval);
-  }, [timer, completeQuiz, settings.timeLimit, questions.length]);
+  }, [timer, nextQuestion, settings.timeLimit]);
   
-  // Current question to display
-  const currentQuestion = questions[currentQuestionIndex];
+  // Background loading check - for progressive streaming questions from Gemini 2.0 Flash
+  useEffect(() => {
+    // If we're on the last question and streaming is active, check if more questions are available
+    if (loadingQuestions && currentQuestionIndex === questions.length - 1) {
+      setHasStreamingActive(true);
+    }
+  }, [loadingQuestions, currentQuestionIndex, questions.length]);
   
-  if (!currentQuestion && !loadingQuestions) {
+  // Render empty state if no questions are available
+  if (questions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] md:min-h-[70vh]">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="text-center p-4 md:p-8"

@@ -14,7 +14,12 @@ import {
   Legend,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar
 } from 'recharts';
 import Button from './ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
@@ -54,6 +59,16 @@ const PerformanceAnalytics: React.FC = () => {
     { name: 'Hard', value: stats.scoresByDifficulty.hard || 55 }
   ];
   
+  // Hexagonal radar chart data for skills analysis
+  const skillsData = [
+    { subject: 'Knowledge', A: stats.scoresByDifficulty.easy || 85, fullMark: 100 },
+    { subject: 'Comprehension', A: stats.scoresByDifficulty.medium || 65, fullMark: 100 },
+    { subject: 'Application', A: stats.scoresByDifficulty.hard || 70, fullMark: 100 },
+    { subject: 'Analysis', A: stats.correctByQuestionType['multiple-choice'] || 75, fullMark: 100 },
+    { subject: 'Synthesis', A: stats.correctByQuestionType['short-answer'] || 60, fullMark: 100 },
+    { subject: 'Evaluation', A: stats.averageScore || 72, fullMark: 100 },
+  ];
+  
   return (
     <div className="max-w-4xl mx-auto p-4">
       <motion.div
@@ -79,6 +94,36 @@ const PerformanceAnalytics: React.FC = () => {
           
           <CardContent>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Hexagonal Skills Chart (New) */}
+              <div className="lg:col-span-2">
+                <Card className="bg-gray-50 dark:bg-dark-200/50 border border-gray-100 dark:border-dark-400">
+                  <CardContent className="p-4">
+                    <h3 className="text-lg font-medium mb-4 text-center">Skills Analysis - Hexagonal Graph</h3>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={skillsData}>
+                          <PolarGrid stroke="#8884d8" />
+                          <PolarAngleAxis dataKey="subject" />
+                          <PolarRadiusAxis domain={[0, 100]} />
+                          <Radar
+                            name="Skills"
+                            dataKey="A"
+                            stroke="#8884d8"
+                            fill="#8884d8"
+                            fillOpacity={0.6}
+                          />
+                          <Tooltip formatter={(value) => `${value}%`} />
+                          <Legend />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="mt-4 text-sm text-gray-500 text-center">
+                      This hexagonal graph shows your cognitive skills based on quiz performance across different dimensions
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
               <div>
                 <h3 className="text-lg font-medium mb-4">Recent Quiz Scores</h3>
                 <div className="h-64">
